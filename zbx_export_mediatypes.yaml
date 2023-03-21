@@ -1,0 +1,99 @@
+zabbix_export:
+  version: '6.0'
+  date: '2023-03-21T20:09:53Z'
+  media_types:
+    -
+      name: 'MTS OmniChannel'
+      type: WEBHOOK
+      parameters:
+        -
+          name: From
+          value: '<SENT_FROM>'
+        -
+          name: Message
+          value: '{ALERT.MESSAGE}'
+        -
+          name: Subject
+          value: '{ALERT.SUBJECT}'
+        -
+          name: To
+          value: '{ALERT.SENDTO}'
+        -
+          name: Token
+          value: '<API_TOKEN>'
+        -
+          name: URL
+          value: 'https://omnichannel.mts.ru/http-api/v1/messages/'
+      script: |
+        try {
+            var
+                params = JSON.parse(value),
+                data,
+                req = new HttpRequest(),
+                resp;
+        
+            req.addHeader('Content-Type: application/json');
+            req.addHeader('Authorization: Basic ' + params.Token);
+        
+            data = {
+                "messages": [
+                    {
+                        "content": {
+                            "short_text": params.Subject + '\n' + params.Message
+                        },
+                        "to": [
+                            {
+                                "msisdn": params.To,
+                                "message_id": null
+                            }
+                        ]
+                    }
+                ],
+                "options": {
+                    "from": {
+                        "sms_address": params.From
+                    }
+                }
+            };
+        
+            delete params.Token; // Delete token before log params
+            Zabbix.log(4, '[ MTS OmniChannel ] Webhook request with value=' + JSON.stringify(params));
+        
+            resp = req.post(params.URL, JSON.stringify(data));
+            Zabbix.log(4, '[ MTS OmniChannel ] Responded with code: ' + req.getStatus() + '. Response: ' + resp);
+        
+            if (req.getStatus() !== 200) {
+                throw resp;
+            }
+        
+            return 'OK';
+        }
+        catch (error) {
+            Zabbix.log(3, '[ MTS OmniChannel ] Sending failed. Error: ' + error);
+            throw 'Failed with error: ' + error;
+        }
+      message_templates:
+        -
+          event_source: TRIGGERS
+          operation_mode: PROBLEM
+          subject: 'Problem: {EVENT.NAME}'
+          message: |
+            Problem started at {EVENT.TIME} on {EVENT.DATE}
+            Problem name: {EVENT.NAME}
+            Host: {HOST.NAME}
+            Severity: {EVENT.SEVERITY}
+            Operational data: {EVENT.OPDATA}
+            Original problem ID: {EVENT.ID}
+            {TRIGGER.URL}
+        -
+          event_source: TRIGGERS
+          operation_mode: RECOVERY
+          subject: 'Resolved in {EVENT.DURATION}: {EVENT.NAME}'
+          message: |
+            Problem has been resolved at {EVENT.RECOVERY.TIME} on {EVENT.RECOVERY.DATE}
+            Problem name: {EVENT.NAME}
+            Problem duration: {EVENT.DURATION}
+            Host: {HOST.NAME}
+            Severity: {EVENT.SEVERITY}
+            Original problem ID: {EVENT.ID}
+            {TRIGGER.URL}
